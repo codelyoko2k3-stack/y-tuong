@@ -8,6 +8,8 @@ const btnListFolder = document.getElementById('btn-list-folder');
 const btnReadFile = document.getElementById('btn-read-file');
 const btnSaveMemory = document.getElementById('btn-save-memory');
 const btnOpenApp = document.getElementById('btn-open-app');
+const btnOpenTerminal = document.getElementById('btn-open-terminal');
+const btnOpenBrowser = document.getElementById('btn-open-browser');
 const btnCreateFile = document.getElementById('btn-create-file');
 const btnCreateShortcutDesktop = document.getElementById('btn-create-shortcut-desktop');
 const btnCreateShortcutStartMenu = document.getElementById('btn-create-shortcut-startmenu');
@@ -15,6 +17,8 @@ const btnToggleAutoStart = document.getElementById('btn-toggle-auto-start');
 const btnVoiceCommand = document.getElementById('btn-voice-command');
 const btnSpeakLast = document.getElementById('btn-speak-last');
 const btnQueryClaude = document.getElementById('btn-query-claude');
+const btnRefreshMemory = document.getElementById('btn-refresh-memory');
+const memoryList = document.getElementById('memory-list');
 const btnMovePath = document.getElementById('btn-move-path');
 const btnDeletePath = document.getElementById('btn-delete-path');
 const btnSavePermissions = document.getElementById('btn-save-permissions');
@@ -75,6 +79,39 @@ async function savePermissions() {
   if (result.success) refreshPermissions();
 }
 
+async function refreshMemoryList() {
+  const result = await window.agentAPI.listMemory();
+  if (!result.success) {
+    memoryList.textContent = `Lỗi: ${result.message}`;
+    return;
+  }
+  memoryList.innerHTML = '';
+  if (result.items.length === 0) {
+    memoryList.textContent = 'Chưa có ghi nhớ.';
+    return;
+  }
+  result.items.slice().reverse().forEach((item) => {
+    const itemEl = document.createElement('div');
+    itemEl.style.padding = '10px';
+    itemEl.style.borderBottom = '1px solid #333';
+    itemEl.innerHTML = `
+      <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+        <div style="flex:1;"><strong>${new Date(item.createdAt).toLocaleString()}</strong><div style="margin-top:6px; white-space:pre-wrap;">${item.note}</div></div>
+        <button data-id="${item.id}" style="background:#a33; border-radius:10px; padding:6px 10px;">Xóa</button>
+      </div>
+    `;
+    const btn = itemEl.querySelector('button');
+    btn.addEventListener('click', async () => {
+      const confirmed = confirm('Xóa ghi nhớ này?');
+      if (!confirmed) return;
+      const deleteResult = await window.agentAPI.deleteMemory(item.id);
+      appendMessage(deleteResult.success ? 'Đã xóa ghi nhớ.' : `Lỗi: ${deleteResult.message}`, 'agent');
+      refreshMemoryList();
+    });
+    memoryList.appendChild(itemEl);
+  });
+}
+
 async function executeOpenApp() {
   const appName = prompt('Nhập tên exe app muốn mở (ví dụ: notepad.exe):', 'notepad.exe');
   if (!appName) return;
@@ -118,6 +155,18 @@ async function queryClaude() {
   const promptText = prompt('Nhập câu hỏi để gửi cho Claude:');
   if (!promptText) return;
   const result = await window.agentAPI.queryClaude(promptText);
+  appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
+}
+
+async function openTerminal() {
+  const result = await window.agentAPI.openTerminal();
+  appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
+}
+
+async function openBrowser() {
+  const url = prompt('Nhập URL muốn mở:', 'https://www.google.com');
+  if (!url) return;
+  const result = await window.agentAPI.openBrowser(url);
   appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
 }
 
@@ -243,13 +292,18 @@ btnToggleAutoStart.addEventListener('click', toggleAutoStart);
 btnVoiceCommand.addEventListener('click', toggleVoiceCommand);
 btnSpeakLast.addEventListener('click', speakLastAgentMessage);
 btnQueryClaude.addEventListener('click', queryClaude);
+btnOpenTerminal.addEventListener('click', openTerminal);
+btnOpenBrowser.addEventListener('click', openBrowser);
 btnSaveMemory.addEventListener('click', async () => {
   const note = prompt('Nhập nội dung ghi nhớ:');
   if (!note) return;
   const result = await window.agentAPI.saveMemory(note);
   appendMessage(result.success ? 'Đã lưu ghi nhớ.' : `Lỗi: ${result.message}`, 'agent');
+  if (result.success) refreshMemoryList();
 });
 btnSavePermissions.addEventListener('click', savePermissions);
 btnRefreshPermissions.addEventListener('click', refreshPermissions);
+btnRefreshMemory.addEventListener('click', refreshMemoryList);
 
 refreshPermissions();
+refreshMemoryList();

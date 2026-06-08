@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -99,6 +99,7 @@ function createTray() {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  registerGlobalShortcuts();
   const permissions = loadPermissions();
   if (permissions.autoStart) {
     setAutoStart(true);
@@ -119,6 +120,10 @@ app.on('window-all-closed', function () {
   }
 });
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
+
 function loadPermissions() {
   try {
     const data = JSON.parse(fs.readFileSync(permissionsPath, 'utf-8'));
@@ -135,6 +140,41 @@ function loadPermissions() {
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function registerGlobalShortcuts() {
+  try {
+    globalShortcut.unregisterAll();
+    const hotkey = 'Control+Alt+J';
+    const registered = globalShortcut.register(hotkey, () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          showMainWindow();
+        }
+      }
+    });
+    if (!registered) {
+      console.warn(`Không đăng ký được phím tắt ${hotkey}`);
+    }
+  } catch (err) {
+    console.error('Lỗi đăng ký hotkey:', err.message);
+  }
+}
+
+function openTerminal() {
+  const terminal = process.platform === 'win32' ? 'cmd.exe' : 'bash';
+  spawn(terminal, [], { shell: true, detached: true, stdio: 'ignore' }).unref();
+}
+
+function openBrowser(url = 'https://www.google.com') {
+  const escapedUrl = safePowerShellString(url);
+  if (process.platform === 'win32') {
+    spawn('cmd.exe', ['/c', 'start', '', escapedUrl], { shell: false, windowsHide: true });
+  } else {
+    spawn('open', [escapedUrl], { detached: true, stdio: 'ignore' }).unref();
   }
 }
 
@@ -483,16 +523,66 @@ ipcMain.handle('open-app', async (event, appName) => {
   }
 });
 
+ipcMain.handle('open-terminal', async () => {
+  try {
+    openTerminal();
+    recordAudit('open-terminal', {}, 'confirmed');
+    return { success: true, message: 'Đã mở terminal.' };
+  } catch (err) {
+    recordAudit('open-terminal', {}, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('open-browser', async (event, url) => {
+  try {
+    openBrowser(url || 'https://www.google.com');
+    recordAudit('open-browser', { url }, 'confirmed');
+    return { success: true, message: `Đã mở trình duyệt: ${url || 'https://www.google.com'}` };
+  } catch (err) {
+    recordAudit('open-browser', { url }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('list-memory', async () => {
+  try {
+    const existing = fs.existsSync(memoryPath)
+      ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
+      : [];
+    return { success: true, items: existing };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('delete-memory', async (event, id) => {
+  try {
+    const existing = fs.existsSync(memoryPath)
+      ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
+      : [];
+    const filtered = existing.filter(item => item.id !== id);
+    fs.writeFileSync(memoryPath, JSON.stringify(filtered, null, 2), 'utf-8');
+    recordAudit('delete-memory', { id }, 'confirmed');
+    return { success: true };
+  } catch (err) {
+    recordAudit('delete-memory', { id }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
 ipcMain.handle('save-memory', async (event, note) => {
-  const memory = { note, createdAt: new Date().toISOString() };
+  const memory = { id: Date.now().toString(), note, createdAt: new Date().toISOString() };
   try {
     const existing = fs.existsSync(memoryPath)
       ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
       : [];
     existing.push(memory);
     fs.writeFileSync(memoryPath, JSON.stringify(existing, null, 2));
-    return { success: true };
+    recordAudit('save-memory', { id: memory.id, note }, 'confirmed');
+    return { success: true, memory };
   } catch (err) {
+    recordAudit('save-memory', { note }, 'error');
     return { success: false, message: err.message };
   }
 });
