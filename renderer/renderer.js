@@ -15,6 +15,7 @@ const btnToggleAutoStart = document.getElementById('btn-toggle-auto-start');
 const btnVoiceCommand = document.getElementById('btn-voice-command');
 const btnSpeakLast = document.getElementById('btn-speak-last');
 const btnQueryClaude = document.getElementById('btn-query-claude');
+const btnMovePath = document.getElementById('btn-move-path');
 const btnDeletePath = document.getElementById('btn-delete-path');
 const btnSavePermissions = document.getElementById('btn-save-permissions');
 const btnRefreshPermissions = document.getElementById('btn-refresh-permissions');
@@ -94,6 +95,15 @@ async function executeCreateFile() {
 
 async function executeCreateShortcut(location) {
   const result = await window.agentAPI.createShortcut(location);
+  appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
+}
+
+async function executeMovePath() {
+  const sourcePath = prompt('Nhập đường dẫn nguồn (file hoặc folder):');
+  if (!sourcePath) return;
+  const destPath = prompt('Nhập đường dẫn đích mới (mục tiêu sau khi di chuyển):');
+  if (!destPath) return;
+  const result = await window.agentAPI.movePath(sourcePath, destPath);
   appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
 }
 
@@ -225,6 +235,7 @@ btnSaveMemory.addEventListener('click', async () => {
 
 btnOpenApp.addEventListener('click', executeOpenApp);
 btnCreateFile.addEventListener('click', executeCreateFile);
+btnMovePath.addEventListener('click', executeMovePath);
 btnDeletePath.addEventListener('click', executeDeletePath);
 btnCreateShortcutDesktop.addEventListener('click', () => executeCreateShortcut('desktop'));
 btnCreateShortcutStartMenu.addEventListener('click', () => executeCreateShortcut('startMenu'));

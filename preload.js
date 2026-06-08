@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld('agentAPI', {
   speakText: (text) => ipcRenderer.invoke('speak-text', text),
   saveMemory: (note) => ipcRenderer.invoke('save-memory', note),
   deletePath: (targetPath) => ipcRenderer.invoke('delete-path', targetPath),
+  movePath: (sourcePath, destPath) => ipcRenderer.invoke('move-path', sourcePath, destPath),
   queryClaude: (prompt) => ipcRenderer.invoke('query-claude', prompt)
 });

@@ -10,6 +10,7 @@ if (!API_KEY) {
 
 async function sendMessage(prompt) {
   if (!API_KEY) throw new Error('CLAUDE_API_KEY not set');
+
   const res = await fetch(CLAUDE_API_URL, {
     method: 'POST',
     headers: {
