@@ -1,8 +1,6 @@
 // Scaffold for Claude (or other LLM) integration.
 // Place your API key in environment variable CLAUDE_API_KEY or set via secure store.
 
-const fetch = require('node-fetch');
-
 const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'https://api.anthropic.com/v1/complete';
 const API_KEY = process.env.CLAUDE_API_KEY || '';
 
@@ -12,6 +10,7 @@ if (!API_KEY) {
 
 async function sendMessage(prompt) {
   if (!API_KEY) throw new Error('CLAUDE_API_KEY not set');
+
   const res = await fetch(CLAUDE_API_URL, {
     method: 'POST',
     headers: {
@@ -21,11 +20,17 @@ async function sendMessage(prompt) {
     body: JSON.stringify({
       model: 'claude-1',
       prompt,
-      max_tokens: 1000
+      max_tokens_to_sample: 1000
     })
   });
+
+  if (!res.ok) {
+    const bodyText = await res.text();
+    throw new Error(`Claude error ${res.status}: ${bodyText}`);
+  }
+
   const json = await res.json();
-  return json;
+  return json.completion || json.output || JSON.stringify(json);
 }
 
 module.exports = { sendMessage };

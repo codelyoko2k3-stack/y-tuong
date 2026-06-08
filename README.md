@@ -75,4 +75,7 @@ npm run package-zip
 
 Ghi chú:
 - `services/claude.js` là scaffold để tích hợp Claude; đặt `CLAUDE_API_KEY` làm biến môi trường.
+- `Chat Claude` trong UI sẽ gửi prompt đến Claude/Anthropic khi API key được cấu hình.
+- `Di chuyển file/folder` và `Xóa file/folder` có xác nhận an toàn.
+- Hành động xóa, ghi đè và di chuyển đều ghi audit vào `memory/audit.log`.
 - Để tạo installer chính thức (NSIS) chạy `npm run dist` — yêu cầu mạng để tải helper binaries của electron-builder.

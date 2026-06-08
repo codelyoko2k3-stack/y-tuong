@@ -31,8 +31,9 @@ async function confirmDanger(title, message) {
 ```
 
 Audit logging:
-- Record user decisions in `memory/audit.log` or a dedicated secure file.
-- Include timestamp, action, actor (user), and allowed/denied outcome.
+- Record user decisions in `memory/audit.log`.
+- Include timestamp, action, details, and allowed/denied/outcome.
+- Do not track audit logs in git; add `memory/audit.log` to `.gitignore`.
 
 Example audit entry format (JSON lines):
-{"ts":"2026-06-08T12:00:00Z","action":"delete","paths":["C:/..."],"result":"denied"}
+{"ts":"2026-06-08T12:00:00Z","action":"delete-path","details":{"targetPath":"C:/..."},"result":"denied"}

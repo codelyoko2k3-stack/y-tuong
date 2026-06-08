@@ -1,12 +1,14 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { sendMessage } = require('./services/claude');
 
 app.setAppUserModelId('com.anh.jarvisagent');
 
 const permissionsPath = path.join(__dirname, 'config', 'permissions.json');
 const memoryPath = path.join(__dirname, 'memory', 'store.json');
+const auditLogPath = path.join(__dirname, 'memory', 'audit.log');
 
 let mainWindow;
 let tray = null;
@@ -97,6 +99,7 @@ function createTray() {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  registerGlobalShortcuts();
   const permissions = loadPermissions();
   if (permissions.autoStart) {
     setAutoStart(true);
@@ -117,6 +120,10 @@ app.on('window-all-closed', function () {
   }
 });
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
+
 function loadPermissions() {
   try {
     const data = JSON.parse(fs.readFileSync(permissionsPath, 'utf-8'));
@@ -127,6 +134,85 @@ function loadPermissions() {
     };
   } catch (err) {
     return { level: 1, whitelist: { folders: [], apps: [] }, autoStart: false };
+  }
+}
+
+function ensureDirectory(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function registerGlobalShortcuts() {
+  try {
+    globalShortcut.unregisterAll();
+    const hotkey = 'Control+Alt+J';
+    const registered = globalShortcut.register(hotkey, () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          showMainWindow();
+        }
+      }
+    });
+    if (!registered) {
+      console.warn(`Không đăng ký được phím tắt ${hotkey}`);
+    }
+  } catch (err) {
+    console.error('Lỗi đăng ký hotkey:', err.message);
+  }
+}
+
+function openTerminal() {
+  const terminal = process.platform === 'win32' ? 'cmd.exe' : 'bash';
+  spawn(terminal, [], { shell: true, detached: true, stdio: 'ignore' }).unref();
+}
+
+function openBrowser(url = 'https://www.google.com') {
+  const escapedUrl = safePowerShellString(url);
+  if (process.platform === 'win32') {
+    spawn('cmd.exe', ['/c', 'start', '', escapedUrl], { shell: false, windowsHide: true });
+  } else {
+    spawn('open', [escapedUrl], { detached: true, stdio: 'ignore' }).unref();
+  }
+}
+
+function recordAudit(action, details, result) {
+  try {
+    ensureDirectory(path.dirname(auditLogPath));
+    const entry = {
+      ts: new Date().toISOString(),
+      action,
+      details,
+      result
+    };
+    fs.appendFileSync(auditLogPath, JSON.stringify(entry) + '\n', 'utf-8');
+  } catch (err) {
+    console.error('Audit write failed:', err.message);
+  }
+}
+
+async function confirmDanger(title, message, detail = '') {
+  const res = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Cancel', 'Confirm'],
+    defaultId: 1,
+    cancelId: 0,
+    title,
+    message,
+    detail,
+    noLink: true
+  });
+  return res.response === 1;
+}
+
+async function callClaude(prompt) {
+  try {
+    const result = await sendMessage(prompt);
+    return { success: true, result };
+  } catch (err) {
+    return { success: false, message: err.message };
   }
 }
 
@@ -244,6 +330,16 @@ ipcMain.handle('save-permissions', async (event, permissionData) => {
 
 ipcMain.handle('send-command', async (event, command) => {
   const permissions = loadPermissions();
+  if (command.toLowerCase().includes('claude') || command.toLowerCase().includes('gpt') || command.toLowerCase().includes('trợ lý')) {
+    const response = await callClaude(command);
+    recordAudit('send-command', { command, routedTo: 'claude' }, response.success ? 'confirmed' : 'error');
+    return {
+      success: response.success,
+      message: response.success ? response.result : `Claude chưa cấu hình hoặc lỗi: ${response.message}`
+    };
+  }
+
+  recordAudit('send-command', { command }, 'confirmed');
   const response = {
     success: true,
     message: 'Lệnh tạm thời chưa được thực thi. Đây là demo command parser.',
@@ -298,51 +394,195 @@ ipcMain.handle('list-folder', async (event, folderPath) => {
 ipcMain.handle('create-file', async (event, filePath, content = '') => {
   const permissions = loadPermissions();
   if (permissions.level < 2) {
+    recordAudit('create-file', { filePath, overwrite: false }, 'denied');
     return { success: false, message: 'Cần cấp quyền viết file.' };
   }
   const folderPath = path.dirname(filePath);
   if (!isPathAllowed(folderPath, permissions)) {
+    recordAudit('create-file', { filePath, overwrite: false }, 'denied');
     return { success: false, message: 'Thư mục đích không nằm trong whitelist.' };
   }
-  if (fs.existsSync(filePath)) {
-    return { success: false, message: 'File đã tồn tại. Không ghi đè tự động.' };
+
+  const exists = fs.existsSync(filePath);
+  if (exists) {
+    const confirmed = await confirmDanger(
+      'Ghi đè file?',
+      `File ${filePath} đã tồn tại.`,
+      'Chỉ xác nhận nếu anh muốn ghi đè nội dung hiện có.'
+    );
+    if (!confirmed) {
+      recordAudit('create-file', { filePath, overwrite: true }, 'denied');
+      return { success: false, message: 'Hủy ghi đè file.' };
+    }
   }
 
   try {
     fs.writeFileSync(filePath, content, 'utf-8');
-    return { success: true, message: `Đã tạo file: ${filePath}` };
+    recordAudit('create-file', { filePath, overwrite: exists }, 'confirmed');
+    return { success: true, message: `Đã tạo${exists ? ' và ghi đè' : ''} file: ${filePath}` };
   } catch (err) {
+    recordAudit('create-file', { filePath, overwrite: exists }, 'error');
     return { success: false, message: err.message };
   }
+});
+
+ipcMain.handle('delete-path', async (event, targetPath) => {
+  const permissions = loadPermissions();
+  if (permissions.level < 3) {
+    recordAudit('delete-path', { targetPath }, 'denied');
+    return { success: false, message: 'Cần cấp quyền xóa file/folder.' };
+  }
+
+  if (!fs.existsSync(targetPath)) {
+    recordAudit('delete-path', { targetPath }, 'denied');
+    return { success: false, message: 'Đường dẫn không tồn tại.' };
+  }
+
+  const confirmed = await confirmDanger(
+    'Xác nhận xóa',
+    `Bạn có muốn xóa: ${targetPath}?`,
+    'Hành động này có thể xóa vĩnh viễn nội dung này.'
+  );
+
+  if (!confirmed) {
+    recordAudit('delete-path', { targetPath }, 'denied');
+    return { success: false, message: 'Hủy xóa.' };
+  }
+
+  try {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+    recordAudit('delete-path', { targetPath }, 'confirmed');
+    return { success: true, message: `Đã xóa: ${targetPath}` };
+  } catch (err) {
+    recordAudit('delete-path', { targetPath }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('move-path', async (event, sourcePath, destPath) => {
+  const permissions = loadPermissions();
+  if (permissions.level < 3) {
+    recordAudit('move-path', { sourcePath, destPath }, 'denied');
+    return { success: false, message: 'Cần cấp quyền di chuyển file/folder.' };
+  }
+
+  if (!fs.existsSync(sourcePath)) {
+    recordAudit('move-path', { sourcePath, destPath }, 'denied');
+    return { success: false, message: 'Nguồn không tồn tại.' };
+  }
+
+  const confirmed = await confirmDanger(
+    'Xác nhận di chuyển',
+    `Bạn có muốn di chuyển từ ${sourcePath} sang ${destPath}?`,
+    'Hành động này sẽ thay đổi vị trí tập tin/thư mục.'
+  );
+
+  if (!confirmed) {
+    recordAudit('move-path', { sourcePath, destPath }, 'denied');
+    return { success: false, message: 'Hủy di chuyển.' };
+  }
+
+  try {
+    fs.renameSync(sourcePath, destPath);
+    recordAudit('move-path', { sourcePath, destPath }, 'confirmed');
+    return { success: true, message: `Đã di chuyển sang: ${destPath}` };
+  } catch (err) {
+    recordAudit('move-path', { sourcePath, destPath }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('query-claude', async (event, prompt) => {
+  const response = await callClaude(prompt);
+  if (response.success) {
+    recordAudit('claude-query', { prompt }, 'confirmed');
+    return { success: true, message: response.result };
+  }
+  recordAudit('claude-query', { prompt }, 'error');
+  return { success: false, message: response.message };
 });
 
 ipcMain.handle('open-app', async (event, appName) => {
   const permissions = loadPermissions();
   if (permissions.level < 3) {
+    recordAudit('open-app', { appName }, 'denied');
     return { success: false, message: 'Cần cấp quyền mở app và thao tác.' };
   }
   if (!permissions.whitelist.apps.includes(appName)) {
+    recordAudit('open-app', { appName }, 'denied');
     return { success: false, message: `App ${appName} không nằm trong whitelist.` };
   }
 
   try {
     spawn('cmd.exe', ['/c', 'start', '', appName], { shell: false, windowsHide: true });
+    recordAudit('open-app', { appName }, 'confirmed');
     return { success: true, message: `Đã mở app: ${appName}` };
+  } catch (err) {
+    recordAudit('open-app', { appName }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('open-terminal', async () => {
+  try {
+    openTerminal();
+    recordAudit('open-terminal', {}, 'confirmed');
+    return { success: true, message: 'Đã mở terminal.' };
+  } catch (err) {
+    recordAudit('open-terminal', {}, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('open-browser', async (event, url) => {
+  try {
+    openBrowser(url || 'https://www.google.com');
+    recordAudit('open-browser', { url }, 'confirmed');
+    return { success: true, message: `Đã mở trình duyệt: ${url || 'https://www.google.com'}` };
+  } catch (err) {
+    recordAudit('open-browser', { url }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('list-memory', async () => {
+  try {
+    const existing = fs.existsSync(memoryPath)
+      ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
+      : [];
+    return { success: true, items: existing };
   } catch (err) {
     return { success: false, message: err.message };
   }
 });
 
+ipcMain.handle('delete-memory', async (event, id) => {
+  try {
+    const existing = fs.existsSync(memoryPath)
+      ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
+      : [];
+    const filtered = existing.filter(item => item.id !== id);
+    fs.writeFileSync(memoryPath, JSON.stringify(filtered, null, 2), 'utf-8');
+    recordAudit('delete-memory', { id }, 'confirmed');
+    return { success: true };
+  } catch (err) {
+    recordAudit('delete-memory', { id }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
 ipcMain.handle('save-memory', async (event, note) => {
-  const memory = { note, createdAt: new Date().toISOString() };
+  const memory = { id: Date.now().toString(), note, createdAt: new Date().toISOString() };
   try {
     const existing = fs.existsSync(memoryPath)
       ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
       : [];
     existing.push(memory);
     fs.writeFileSync(memoryPath, JSON.stringify(existing, null, 2));
-    return { success: true };
+    recordAudit('save-memory', { id: memory.id, note }, 'confirmed');
+    return { success: true, memory };
   } catch (err) {
+    recordAudit('save-memory', { note }, 'error');
     return { success: false, message: err.message };
   }
 });

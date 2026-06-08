@@ -51,12 +51,24 @@
         <button id="btn-read-file">Đọc file mẫu</button>
         <button id="btn-open-app">Mở app từ whitelist</button>
         <button id="btn-create-file">Tạo file mới</button>
+        <button id="btn-move-path">Di chuyển file/folder</button>
+        <button id="btn-delete-path">Xóa file/folder</button>
         <button id="btn-create-shortcut-desktop">Tạo shortcut Desktop</button>
         <button id="btn-create-shortcut-startmenu">Tạo shortcut Start Menu</button>
         <button id="btn-toggle-auto-start">Bật/tắt khởi động cùng Windows</button>
         <button id="btn-voice-command">Nhận lệnh giọng nói</button>
         <button id="btn-speak-last">Nói lại câu trả lời</button>
+        <button id="btn-query-claude">Chat Claude</button>
         <button id="btn-save-memory">Lưu note</button>
+        <button id="btn-open-terminal">Mở Terminal</button>
+        <button id="btn-open-browser">Mở trình duyệt</button>
+      </section>
+      <section>
+        <h3>Memory cá nhân</h3>
+        <div class="card" style="padding:12px;">
+          <button id="btn-refresh-memory">Làm mới memory</button>
+          <div id="memory-list" style="margin-top:12px; max-height:200px; overflow:auto; background:#0f0f0f; padding:12px; border-radius:10px;"></div>
+        </div>
       </section>
       <section>
         <h3>Trạng thái</h3>
@@ -73,6 +85,7 @@
         <div>
           <h1>AI Quản Gia Máy Tính</h1>
           <p>Một agent Windows skeleton để phát triển tiếp.</p>
+          <p style="margin:0.5rem 0 0 0; color:#9f9;">Phím tắt mở app: <strong>Ctrl+Alt+J</strong></p>
         </div>
       </div>
       <div class="card chat-log" id="chatLog"></div>
