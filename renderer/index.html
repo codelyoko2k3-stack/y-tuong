@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Quản Gia Máy Tính</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #121212; color: #eee; }
+    .app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
+    .sidebar { padding: 20px; background: #1f1f1f; border-right: 1px solid #333; }
+    .main { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: #1a1a1a; border: 1px solid #333; border-radius: 10px; padding: 16px; }
+    .chat-log { flex: 1; overflow-y: auto; max-height: 440px; display: flex; flex-direction: column; gap: 12px; }
+    .message { padding: 12px; border-radius: 10px; max-width: 80%; }
+    .user { background: #2f78ff; align-self: flex-end; }
+    .agent { background: #2b2b2b; align-self: flex-start; }
+    textarea { width: 100%; min-height: 90px; border-radius: 10px; border: 1px solid #333; background: #111; color: #eee; padding: 12px; resize: vertical; }
+    button { border: none; border-radius: 10px; padding: 12px 18px; background: #2f78ff; color: white; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    input { width: 100%; border-radius: 10px; border: 1px solid #333; background: #111; color: #eee; padding: 10px; }
+    .sidebar section { margin-bottom: 20px; }
+    .status { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="sidebar">
+      <h2>Quyền & Trạng thái</h2>
+      <div class="card">
+        <div><strong>Cấp quyền hiện tại:</strong></div>
+        <div id="permission-level">Đang tải...</div>
+        <div class="status"><span id="perm-folders"></span></div>
+        <div class="status"><span id="perm-apps"></span></div>
+      </div>
+      <section>
+        <h3>Quản lý quyền</h3>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <label>Cấp hiện tại: <input id="input-permission-level" type="number" min="1" max="5" value="1"></label>
+          <label>Folder whitelist:</label>
+          <textarea id="input-whitelist-folders" rows="3" style="width:100%; resize: vertical;">C:/Users/ahihi/OneDrive/Desktop/y tuong</textarea>
+          <label>App whitelist (exe name, ngăn cách bằng dấu phẩy):</label>
+          <input id="input-whitelist-apps" type="text" value="notepad.exe,code.exe">
+          <button id="btn-save-permissions">Lưu permission</button>
+          <button id="btn-refresh-permissions">Làm mới quyền</button>
+        </div>
+      </section>
+      <section>
+        <h3>Actions mẫu</h3>
+        <button id="btn-list-folder">Xem folder mẫu</button>
+        <button id="btn-read-file">Đọc file mẫu</button>
+        <button id="btn-open-app">Mở app từ whitelist</button>
+        <button id="btn-create-file">Tạo file mới</button>
+        <button id="btn-create-shortcut-desktop">Tạo shortcut Desktop</button>
+        <button id="btn-create-shortcut-startmenu">Tạo shortcut Start Menu</button>
+        <button id="btn-toggle-auto-start">Bật/tắt khởi động cùng Windows</button>
+        <button id="btn-voice-command">Nhận lệnh giọng nói</button>
+        <button id="btn-speak-last">Nói lại câu trả lời</button>
+        <button id="btn-save-memory">Lưu note</button>
+      </section>
+      <section>
+        <h3>Trạng thái</h3>
+        <div id="auto-start-status">Khởi động cùng Windows: Đang tải...</div>
+        <div id="voice-status">Giọng nói: Chưa kích hoạt</div>
+      </section>
+      <section>
+        <h3>Ghi chú</h3>
+        <p>Không thực hiện tác vụ nguy hiểm khi chưa có phép.</p>
+      </section>
+    </div>
+    <div class="main">
+      <div class="card" style="display:flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h1>AI Quản Gia Máy Tính</h1>
+          <p>Một agent Windows skeleton để phát triển tiếp.</p>
+        </div>
+      </div>
+      <div class="card chat-log" id="chatLog"></div>
+      <div class="card">
+        <textarea id="commandInput" placeholder="Nhập yêu cầu của anh..."></textarea>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button id="sendButton">Gửi</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

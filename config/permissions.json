@@ -1,0 +1,8 @@
+{
+  "level": 1,
+  "whitelist": {
+    "folders": ["C:/Users/ahihi/OneDrive/Desktop/y tuong"],
+    "apps": ["notepad.exe", "code.exe"]
+  },
+  "autoStart": false
+}

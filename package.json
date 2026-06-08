@@ -1,0 +1,41 @@
+{
+  "name": "ai-quan-gia-may-tinh",
+  "version": "0.1.0",
+  "description": "Jarvis-style AI agent skeleton for Windows.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --dir",
+    "package-win": "electron-packager . \"Jarvis Agent\" --platform=win32 --arch=x64 --out=release --overwrite --asar=false",
+    "package-portable": "node scripts/package-portable.js",
+    "package-zip": "node scripts/package-zip.js"
+  },
+  "devDependencies": {
+    "electron": "^26.0.0",
+    "electron-builder": "^24.9.0",
+    "electron-packager": "^17.1.2"
+  },
+  "author": "Anh",
+  "build": {
+    "appId": "com.anh.jarvisagent",
+    "productName": "Jarvis Agent",
+    "directories": {
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "**/*"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
