@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld('agentAPI', {
   getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
   setAutoStart: (enabled) => ipcRenderer.invoke('set-auto-start', enabled),
   speakText: (text) => ipcRenderer.invoke('speak-text', text),
-  saveMemory: (note) => ipcRenderer.invoke('save-memory', note)
+  saveMemory: (note) => ipcRenderer.invoke('save-memory', note),
+  deletePath: (targetPath) => ipcRenderer.invoke('delete-path', targetPath),
+  queryClaude: (prompt) => ipcRenderer.invoke('query-claude', prompt)
 });

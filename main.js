@@ -1,12 +1,14 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { sendMessage } = require('./services/claude');
 
 app.setAppUserModelId('com.anh.jarvisagent');
 
 const permissionsPath = path.join(__dirname, 'config', 'permissions.json');
 const memoryPath = path.join(__dirname, 'memory', 'store.json');
+const auditLogPath = path.join(__dirname, 'memory', 'audit.log');
 
 let mainWindow;
 let tray = null;
@@ -130,6 +132,50 @@ function loadPermissions() {
   }
 }
 
+function ensureDirectory(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function recordAudit(action, details, result) {
+  try {
+    ensureDirectory(path.dirname(auditLogPath));
+    const entry = {
+      ts: new Date().toISOString(),
+      action,
+      details,
+      result
+    };
+    fs.appendFileSync(auditLogPath, JSON.stringify(entry) + '\n', 'utf-8');
+  } catch (err) {
+    console.error('Audit write failed:', err.message);
+  }
+}
+
+async function confirmDanger(title, message, detail = '') {
+  const res = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Cancel', 'Confirm'],
+    defaultId: 1,
+    cancelId: 0,
+    title,
+    message,
+    detail,
+    noLink: true
+  });
+  return res.response === 1;
+}
+
+async function callClaude(prompt) {
+  try {
+    const result = await sendMessage(prompt);
+    return { success: true, result };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
 function savePermissions(permissionData) {
   const existing = loadPermissions();
   const merged = {
@@ -244,6 +290,16 @@ ipcMain.handle('save-permissions', async (event, permissionData) => {
 
 ipcMain.handle('send-command', async (event, command) => {
   const permissions = loadPermissions();
+  if (command.toLowerCase().includes('claude') || command.toLowerCase().includes('gpt') || command.toLowerCase().includes('trợ lý')) {
+    const response = await callClaude(command);
+    recordAudit('send-command', { command, routedTo: 'claude' }, response.success ? 'confirmed' : 'error');
+    return {
+      success: response.success,
+      message: response.success ? response.result : `Claude chưa cấu hình hoặc lỗi: ${response.message}`
+    };
+  }
+
+  recordAudit('send-command', { command }, 'confirmed');
   const response = {
     success: true,
     message: 'Lệnh tạm thời chưa được thực thi. Đây là demo command parser.',
@@ -298,37 +354,131 @@ ipcMain.handle('list-folder', async (event, folderPath) => {
 ipcMain.handle('create-file', async (event, filePath, content = '') => {
   const permissions = loadPermissions();
   if (permissions.level < 2) {
+    recordAudit('create-file', { filePath, overwrite: false }, 'denied');
     return { success: false, message: 'Cần cấp quyền viết file.' };
   }
   const folderPath = path.dirname(filePath);
   if (!isPathAllowed(folderPath, permissions)) {
+    recordAudit('create-file', { filePath, overwrite: false }, 'denied');
     return { success: false, message: 'Thư mục đích không nằm trong whitelist.' };
   }
-  if (fs.existsSync(filePath)) {
-    return { success: false, message: 'File đã tồn tại. Không ghi đè tự động.' };
+
+  const exists = fs.existsSync(filePath);
+  if (exists) {
+    const confirmed = await confirmDanger(
+      'Ghi đè file?',
+      `File ${filePath} đã tồn tại.`,
+      'Chỉ xác nhận nếu anh muốn ghi đè nội dung hiện có.'
+    );
+    if (!confirmed) {
+      recordAudit('create-file', { filePath, overwrite: true }, 'denied');
+      return { success: false, message: 'Hủy ghi đè file.' };
+    }
   }
 
   try {
     fs.writeFileSync(filePath, content, 'utf-8');
-    return { success: true, message: `Đã tạo file: ${filePath}` };
+    recordAudit('create-file', { filePath, overwrite: exists }, 'confirmed');
+    return { success: true, message: `Đã tạo${exists ? ' và ghi đè' : ''} file: ${filePath}` };
   } catch (err) {
+    recordAudit('create-file', { filePath, overwrite: exists }, 'error');
     return { success: false, message: err.message };
   }
+});
+
+ipcMain.handle('delete-path', async (event, targetPath) => {
+  const permissions = loadPermissions();
+  if (permissions.level < 3) {
+    recordAudit('delete-path', { targetPath }, 'denied');
+    return { success: false, message: 'Cần cấp quyền xóa file/folder.' };
+  }
+
+  if (!fs.existsSync(targetPath)) {
+    recordAudit('delete-path', { targetPath }, 'denied');
+    return { success: false, message: 'Đường dẫn không tồn tại.' };
+  }
+
+  const confirmed = await confirmDanger(
+    'Xác nhận xóa',
+    `Bạn có muốn xóa: ${targetPath}?`,
+    'Hành động này có thể xóa vĩnh viễn nội dung này.'
+  );
+
+  if (!confirmed) {
+    recordAudit('delete-path', { targetPath }, 'denied');
+    return { success: false, message: 'Hủy xóa.' };
+  }
+
+  try {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+    recordAudit('delete-path', { targetPath }, 'confirmed');
+    return { success: true, message: `Đã xóa: ${targetPath}` };
+  } catch (err) {
+    recordAudit('delete-path', { targetPath }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('move-path', async (event, sourcePath, destPath) => {
+  const permissions = loadPermissions();
+  if (permissions.level < 3) {
+    recordAudit('move-path', { sourcePath, destPath }, 'denied');
+    return { success: false, message: 'Cần cấp quyền di chuyển file/folder.' };
+  }
+
+  if (!fs.existsSync(sourcePath)) {
+    recordAudit('move-path', { sourcePath, destPath }, 'denied');
+    return { success: false, message: 'Nguồn không tồn tại.' };
+  }
+
+  const confirmed = await confirmDanger(
+    'Xác nhận di chuyển',
+    `Bạn có muốn di chuyển từ ${sourcePath} sang ${destPath}?`,
+    'Hành động này sẽ thay đổi vị trí tập tin/thư mục.'
+  );
+
+  if (!confirmed) {
+    recordAudit('move-path', { sourcePath, destPath }, 'denied');
+    return { success: false, message: 'Hủy di chuyển.' };
+  }
+
+  try {
+    fs.renameSync(sourcePath, destPath);
+    recordAudit('move-path', { sourcePath, destPath }, 'confirmed');
+    return { success: true, message: `Đã di chuyển sang: ${destPath}` };
+  } catch (err) {
+    recordAudit('move-path', { sourcePath, destPath }, 'error');
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('query-claude', async (event, prompt) => {
+  const response = await callClaude(prompt);
+  if (response.success) {
+    recordAudit('claude-query', { prompt }, 'confirmed');
+    return { success: true, message: response.result };
+  }
+  recordAudit('claude-query', { prompt }, 'error');
+  return { success: false, message: response.message };
 });
 
 ipcMain.handle('open-app', async (event, appName) => {
   const permissions = loadPermissions();
   if (permissions.level < 3) {
+    recordAudit('open-app', { appName }, 'denied');
     return { success: false, message: 'Cần cấp quyền mở app và thao tác.' };
   }
   if (!permissions.whitelist.apps.includes(appName)) {
+    recordAudit('open-app', { appName }, 'denied');
     return { success: false, message: `App ${appName} không nằm trong whitelist.` };
   }
 
   try {
     spawn('cmd.exe', ['/c', 'start', '', appName], { shell: false, windowsHide: true });
+    recordAudit('open-app', { appName }, 'confirmed');
     return { success: true, message: `Đã mở app: ${appName}` };
   } catch (err) {
+    recordAudit('open-app', { appName }, 'error');
     return { success: false, message: err.message };
   }
 });

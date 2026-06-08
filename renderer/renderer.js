@@ -14,6 +14,8 @@ const btnCreateShortcutStartMenu = document.getElementById('btn-create-shortcut-
 const btnToggleAutoStart = document.getElementById('btn-toggle-auto-start');
 const btnVoiceCommand = document.getElementById('btn-voice-command');
 const btnSpeakLast = document.getElementById('btn-speak-last');
+const btnQueryClaude = document.getElementById('btn-query-claude');
+const btnDeletePath = document.getElementById('btn-delete-path');
 const btnSavePermissions = document.getElementById('btn-save-permissions');
 const btnRefreshPermissions = document.getElementById('btn-refresh-permissions');
 const inputPermissionLevel = document.getElementById('input-permission-level');
@@ -92,6 +94,20 @@ async function executeCreateFile() {
 
 async function executeCreateShortcut(location) {
   const result = await window.agentAPI.createShortcut(location);
+  appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
+}
+
+async function executeDeletePath() {
+  const path = prompt('Nhập đường dẫn file hoặc folder cần xóa:');
+  if (!path) return;
+  const result = await window.agentAPI.deletePath(path);
+  appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
+}
+
+async function queryClaude() {
+  const promptText = prompt('Nhập câu hỏi để gửi cho Claude:');
+  if (!promptText) return;
+  const result = await window.agentAPI.queryClaude(promptText);
   appendMessage(result.success ? result.message : `Lỗi: ${result.message}`, 'agent');
 }
 
@@ -209,11 +225,19 @@ btnSaveMemory.addEventListener('click', async () => {
 
 btnOpenApp.addEventListener('click', executeOpenApp);
 btnCreateFile.addEventListener('click', executeCreateFile);
+btnDeletePath.addEventListener('click', executeDeletePath);
 btnCreateShortcutDesktop.addEventListener('click', () => executeCreateShortcut('desktop'));
 btnCreateShortcutStartMenu.addEventListener('click', () => executeCreateShortcut('startMenu'));
 btnToggleAutoStart.addEventListener('click', toggleAutoStart);
 btnVoiceCommand.addEventListener('click', toggleVoiceCommand);
 btnSpeakLast.addEventListener('click', speakLastAgentMessage);
+btnQueryClaude.addEventListener('click', queryClaude);
+btnSaveMemory.addEventListener('click', async () => {
+  const note = prompt('Nhập nội dung ghi nhớ:');
+  if (!note) return;
+  const result = await window.agentAPI.saveMemory(note);
+  appendMessage(result.success ? 'Đã lưu ghi nhớ.' : `Lỗi: ${result.message}`, 'agent');
+});
 btnSavePermissions.addEventListener('click', savePermissions);
 btnRefreshPermissions.addEventListener('click', refreshPermissions);
 
